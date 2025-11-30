@@ -138,9 +138,26 @@ def solve_vrp(
     # --------------------------------------------------------
     # Solve
     # --------------------------------------------------------
-    solution = routing.SolveWithParameters(search_params)
-    if not solution:
+    #solution = routing.SolveWithParameters(search_params)
+    try:
+        solution = routing.SolveWithParameters(search_params)
+    except Exception as e:
+        import streamlit as st
+        st.error("❌ OR-Tools crashed inside SolveWithParameters:")
+        st.code(str(e))
         return None, None
+
+    if solution is None:
+        import streamlit as st
+        st.error("❌ No feasible solution found. The solver returned None.")
+        st.write("Possible reasons:")
+        st.write("- Time windows impossible")
+        st.write("- Capacity too small")
+        st.write("- Too few vehicles")
+        st.write("- Incorrect distance matrix (Google API issue)")
+        st.write("- Coordinates too far / unreachable")
+        return None, None
+
 
     # --------------------------------------------------------
     # Extract Routes
