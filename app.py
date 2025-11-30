@@ -305,13 +305,18 @@ use_google = st.sidebar.checkbox(
     value=True,
 )
 
+# Google API key from Streamlit Secrets (for cloud deployment)
 api_key = None
 if use_google:
-    api_key = st.sidebar.text_input(
-        "Google API key",
-        type="password",
-        placeholder="AIza...",
-    )
+    if "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+        st.sidebar.success("Google API key loaded from secrets ✔")
+    else:
+        api_key = st.sidebar.text_input(
+            "Google API key (local use only)",
+            type="password",
+            placeholder="AIza...",
+        )
 
 st.sidebar.markdown("---")
 st.sidebar.header("🗺 Map Options")
