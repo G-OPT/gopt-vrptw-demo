@@ -7,4 +7,8 @@ ortools
 reportlab
 requests
 polyline
-
+folium
+polyline
+fpdf2
+Pillow
+ortools==9.8.3296
