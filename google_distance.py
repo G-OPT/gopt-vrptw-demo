@@ -49,10 +49,6 @@ def get_google_distance_matrices(coords, api_key):
     if response.status_code != 200:
         raise Exception(f"Google Routes API Error {response.status_code}: {response.text}")
 
-
-    if response.status_code != 200:
-        raise Exception(f"Google Routes API Error {response.status_code}: {response.text}")
-
     data = response.json()
 
     n = len(coords)
