@@ -9,4 +9,4 @@ polyline
 folium
 fpdf2
 Pillow
-ortools==9.7.2996
+ortools==9.10.4060
