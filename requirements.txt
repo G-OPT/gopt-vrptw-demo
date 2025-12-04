@@ -9,5 +9,5 @@ polyline
 folium
 fpdf2
 Pillow
-ortools==9.10.4060
+ortools
 protobuf==3.20.1
