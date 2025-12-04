@@ -1,4 +1,4 @@
-streamlit==1.31.0
+streamlit==1.25.0
 pandas==2.2.2
 numpy
 matplotlib
@@ -9,4 +9,5 @@ polyline
 folium
 fpdf2
 Pillow
-ortools
+ortools==9.6.2534
+protobuf==3.20.1
