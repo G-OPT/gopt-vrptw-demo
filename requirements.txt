@@ -10,4 +10,4 @@ folium
 fpdf2
 Pillow
 ortools==9.6.2534
-protobuf==3.20.1
+protobuf==4.21.12
