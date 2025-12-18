@@ -17,84 +17,88 @@ from google_routes import get_route_polyline  # real road paths (polyline)
 # PDF REPORT GENERATION
 # ======================================================
 
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+from reportlab.lib.units import cm
 
 def create_pdf_report(total_km, total_demand, total_capacity, num_vehicles, solution_df, logo_path: Path | None = None) -> bytes:
     buffer = io.BytesIO()
-    # Using SimpleDocTemplate makes multi-page handling automatic
+    # SimpleDocTemplate manages multiple pages automatically
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
     styles = getSampleStyleSheet()
     story = []
 
-    # 1. Custom Styles
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=18, spaceAfter=20, textColor=colors.HexColor("#1E3A8A"))
-    metric_label = ParagraphStyle('MetricLabel', parent=styles['Normal'], fontSize=9, textColor=colors.grey)
-    metric_value = ParagraphStyle('MetricValue', parent=styles['Normal'], fontSize=12, fontName='Helvetica-Bold')
+    # 1. Header with Logo and Title
+    # We use a nested table to align the logo left and title right
+    title_text = "<b>G-OPT Route Optimization Report</b><br/><font size=10>Professional VRPTW Summary</font>"
+    
+    header_data = []
+    if logo_path and logo_path.exists():
+        img = Image(str(logo_path), width=2.5*cm, height=2.5*cm, kind='proportional')
+        header_data.append([img, Paragraph(title_text, styles['Title'])])
+    else:
+        header_data.append([Paragraph(title_text, styles['Title'])])
 
-    # 2. Add Title
-    story.append(Paragraph("G-OPT Route Optimization Report", title_style))
-    story.append(Spacer(1, 12))
-
-    # 3. KPI Dashboard (Summary Table)
-    utilization = (total_demand / total_capacity * 100) if total_capacity > 0 else 0
-    summary_data = [
-        [Paragraph("Total Distance", metric_label), Paragraph("Capacity Utilization", metric_label)],
-        [Paragraph(f"{total_km:.2f} km", metric_value), Paragraph(f"{utilization:.1f} %", metric_value)],
-        [Paragraph("Total Demand", metric_label), Paragraph("Active Vehicles", metric_label)],
-        [Paragraph(f"{total_demand} units", metric_value), Paragraph(f"{num_vehicles}", metric_value)]
-    ]
-    summary_table = Table(summary_data, colWidths=[250, 250])
-    summary_table.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+    header_table = Table(header_data, colWidths=[3*cm, 13*cm] if logo_path else [16*cm])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (0,0), (0,0), 'LEFT'),
     ]))
-    story.append(summary_table)
+    story.append(header_table)
     story.append(Spacer(1, 20))
 
-    # 4. Detailed Route Table (The "Efficient" Part)
-    story.append(Paragraph("Detailed Vehicle Manifest", styles['Heading2']))
+    # 2. KPI Dashboard Section
+    utilization = (total_demand / total_capacity * 100) if total_capacity > 0 else 0
+    metric_label = ParagraphStyle('MetricLabel', parent=styles['Normal'], fontSize=8, textColor=colors.grey)
+    metric_value = ParagraphStyle('MetricValue', parent=styles['Normal'], fontSize=11, fontName='Helvetica-Bold')
+
+    summary_data = [
+        [Paragraph("TOTAL DISTANCE", metric_label), Paragraph("CAPACITY UTILIZATION", metric_label)],
+        [Paragraph(f"{total_km:.2f} km", metric_value), Paragraph(f"{utilization:.1f} %", metric_value)],
+        [Paragraph("TOTAL DEMAND", metric_label), Paragraph("VEHICLE COUNT", metric_label)],
+        [Paragraph(f"{total_demand} units", metric_value), Paragraph(f"{num_vehicles} active", metric_value)]
+    ]
     
-    # Prepare Table Data
-    data = [["Vehicle", "Stop #", "Location Name", "Demand", "Ready Time"]] # Header
+    summary_table = Table(summary_data, colWidths=[250, 250])
+    summary_table.setStyle(TableStyle([
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke),
+        ('BOX', (0,0), (-1,-1), 1, colors.lightgrey),
+    ]))
+    story.append(summary_table)
+    story.append(Spacer(1, 25))
+
+    # 3. Detailed Manifest (The "Efficient" List)
+    story.append(Paragraph("Detailed Route Manifest", styles['Heading2']))
     
-    # Sort for cleaner report
+    # Table data with alternating colors (Zebra stripes)
+    data = [["Vehicle", "Stop #", "Location Name", "Demand", "Ready Time"]]
     sorted_df = solution_df.sort_values(['vehicle', 'stop_order'])
     
     for _, row in sorted_df.iterrows():
         data.append([
-            f"Veh {row['vehicle']}", 
+            f"V-{row['vehicle']}", 
             str(row['stop_order']), 
-            row['name'][:40], 
+            row['name'][:35], 
             str(row['demand']),
             str(row['ready_time'])
         ])
 
-    # 5. Professional Table Styling
-    main_table = Table(data, repeatRows=1, colWidths=[60, 50, 250, 60, 80])
+    main_table = Table(data, repeatRows=1, colWidths=[60, 50, 240, 60, 80])
     main_table.setStyle(TableStyle([
-        # Header Styling
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E3A8A")), # Logistics Blue
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        
-        # Grid and Body Styling
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),
-        ('ALIGN', (0, 1), (1, -1), 'CENTER'), # Center vehicle and stop #
-        ('ALIGN', (3, 1), (-1, -1), 'CENTER'),
-        
-        # Zebra Striping (Alternating rows)
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.whitesmoke]), # Zebra stripes
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
     ]))
     
     story.append(main_table)
 
-    # Build PDF
+    # 4. Build and Return
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
