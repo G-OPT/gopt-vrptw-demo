@@ -128,10 +128,10 @@ with header_right:
         """,
         unsafe_allow_html=True,
     )
-
+st.divider() # Adds a clean horizontal line and some padding
 st.write(
-    "Upload a CSV of your locations and constraints, choose your fleet settings, "
-    "and G-OPT will compute optimized routes."
+    "Upload a CSV of your locations and constraints, choose your fleet settings, and G-OPT will compute optimized routes with time windows and capacity constraints."
+    
 )
 
 # ======================================================
