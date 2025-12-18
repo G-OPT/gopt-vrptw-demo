@@ -1,75 +1,47 @@
-import requests
-import json
-import streamlit as st
+import numpy as np
+from math import radians, cos, sin, asin, sqrt
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """Calculate the great circle distance in km between two points."""
+    # Finland-specific circuitry factor (accounts for roads not being straight)
+    CIRCUITRY_FACTOR = 1.25 
+    
+    # convert decimal degrees to radians 
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+
+    # haversine formula 
+    dlon = lon2 - lon1 
+    dlat = lat2 - lat1 
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a)) 
+    r = 6371 # Radius of earth in kilometers.
+    
+    return c * r * CIRCUITRY_FACTOR
 
 def get_google_distance_matrices(coords, api_key):
-    """
-    Uses the NEW Google Routes API - ComputeRouteMatrix
-    Returns:
-        distance_matrix_km  (NxN)
-        time_matrix_min     (NxN)
-    """
-
-    origins = []
-    destinations = []
-
-    # Build origins/destinations in proper Schema
-    for (lat, lon) in coords:
-        waypoint = {
-            "waypoint": {
-                "location": {
-                    "latLng": {
-                        "latitude": lat,
-                        "longitude": lon
-                    }
-                }
-            }
-        }
-        origins.append(waypoint)
-        destinations.append(waypoint)
-
-    url = "https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix"
-
-    headers = {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": api_key,
-        # Only return fields we need
-        "X-Goog-FieldMask": "originIndex,destinationIndex,duration,distanceMeters"
-    }
-
-    body = {
-        "origins": origins,
-        "destinations": destinations,
-        "travelMode": "DRIVE",
-        "routingPreference": "TRAFFIC_AWARE"
-    }
-
-    response = requests.post(url, headers=headers, data=json.dumps(body))
-    
-    if response.status_code != 200:
-        raise Exception(f"Google Routes API Error {response.status_code}: {response.text}")
-
-    data = response.json()
-
     n = len(coords)
-    distance_matrix_km = [[0]*n for _ in range(n)]
-    time_matrix_min = [[0]*n for _ in range(n)]
+    
+    # CHECK: If locations > 25, use Haversine to avoid API limits and high costs
+    if n > 25:
+        print(f"Large dataset detected ({n} nodes). Falling back to Haversine logic.")
+        dist_matrix = np.zeros((n, n))
+        time_matrix = np.zeros((n, n))
+        
+        # Average speed in Finland (combination of urban and highway)
+        AVG_SPEED_KMPH = 60 
 
-    # Parse results
-    for element in data:
-        i = element["originIndex"]
-        j = element["destinationIndex"]
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    dist_matrix[i][j] = 0
+                    time_matrix[i][j] = 0
+                else:
+                    d = haversine_distance(coords[i][0], coords[i][1], coords[j][0], coords[j][1])
+                    dist_matrix[i][j] = d
+                    # Convert distance to minutes
+                    time_matrix[i][j] = (d / AVG_SPEED_KMPH) * 60
+        
+        return dist_matrix, time_matrix
 
-        dist = element.get("distanceMeters", None)
-        dur = element.get("duration", None)
-
-        if dist is None or dur is None:
-            distance_matrix_km[i][j] = 9999
-            time_matrix_min[i][j] = 9999
-        else:
-            distance_matrix_km[i][j] = dist / 1000.0
-            # duration is string like "120s"
-            seconds = float(dur.replace("s", ""))
-            time_matrix_min[i][j] = seconds / 60.0
-
-    return distance_matrix_km, time_matrix_min
+    # ELSE: Use your existing Google API logic for small, high-precision requests
+    # [Keep your existing Google request code here...]
