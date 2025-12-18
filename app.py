@@ -129,7 +129,6 @@ with header_right:
         unsafe_allow_html=True,
     )
 st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
-#st.divider() # Adds a clean horizontal line and some padding
 st.write(
     "Upload a CSV of your locations and constraints, choose your fleet settings, and G-OPT will compute optimized routes with time windows and capacity constraints."
 )
@@ -184,6 +183,15 @@ depot_only = st.sidebar.checkbox("Show only depot (hide routes)", value=False)
 # ======================================================
 # Load & Display Data
 # ======================================================
+
+# Divider with an icon in the middle
+st.markdown("""
+    <div style="display: flex; align-items: center; text-align: center; color: #1E3A8A;">
+        <hr style="flex-grow: 1; border: none; border-top: 1px solid #1E3A8A;">
+        <span style="padding: 0 10px;">🚚</span>
+        <hr style="flex-grow: 1; border: none; border-top: 1px solid #1E3A8A;">
+    </div>
+    """, unsafe_allow_html=True)
 
 df = pd.read_csv(uploaded_file if uploaded_file else "sample_locations.csv")
 
