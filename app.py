@@ -17,62 +17,67 @@ from google_routes import get_route_polyline  # real road paths (polyline)
 # PDF REPORT GENERATION
 # ======================================================
 
-def create_pdf_report(
-    total_km,
-    total_demand,
-    total_capacity,
-    num_vehicles,
-    solution_df,
-    logo_path: Path | None = None,
-) -> bytes:
-    """Create a professional PDF report with logo, KPIs, and summary."""
+def create_pdf_report(total_km, total_demand, total_capacity, num_vehicles, solution_df, logo_path: Path | None = None) -> bytes:
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
-
-    header_logo_w = 3.5 * cm
-    header_logo_h = 3.5 * cm
+    
+    # --- Header & Logo ---
+    header_logo_w, header_logo_h = 3.5 * cm, 3.5 * cm
     padding_top = height - 2.0 * cm
-
     if logo_path and logo_path.exists():
-        try:
-            c.drawImage(
-                str(logo_path),
-                2 * cm,
-                padding_top - header_logo_h,
-                width=header_logo_w,
-                height=header_logo_h,
-                preserveAspectRatio=True,
-                mask="auto",
-            )
-        except Exception:
-            pass
+        c.drawImage(str(logo_path), 2*cm, padding_top - header_logo_h, width=header_logo_w, height=header_logo_h, preserveAspectRatio=True, mask='auto')
 
     title_x = 2 * cm + header_logo_w + 1 * cm
-    title_y = padding_top - 0.5 * cm
-
     c.setFont("Helvetica-Bold", 18)
-    c.setFillColor(HexColor("#000000"))
-    c.drawString(title_x, title_y, "G-OPT Route Optimization Report")
-
+    c.drawString(title_x, padding_top - 0.5 * cm, "G-OPT Route Optimization Report")
     c.setFont("Helvetica", 11)
-    c.drawString(title_x, title_y - 0.8 * cm, "Professional VRPTW Summary Report")
+    c.drawString(title_x, padding_top - 1.3 * cm, "Professional VRPTW Summary & Detailed Itinerary")
 
+    # --- Summary Metrics ---
     y = padding_top - header_logo_h - 1.5 * cm
     c.setFont("Helvetica-Bold", 12)
-    c.drawString(2 * cm, y, "Summary")
-    y -= 0.7 * cm
-
+    c.drawString(2 * cm, y, "Summary Metrics")
+    y -= 0.8 * cm
     c.setFont("Helvetica", 10)
     utilization = (total_demand / total_capacity * 100) if total_capacity > 0 else 0
-    vehicles = sorted(solution_df["vehicle"].unique().tolist())
     
-    c.drawString(2 * cm, y, f"Total distance: {total_km:.2f} km")
-    c.drawString(width/2 + 0.5 * cm, y, f"Load utilization: {utilization:.1f} %")
+    c.drawString(2 * cm, y, f"Total Distance: {total_km:.2f} km")
+    c.drawString(10 * cm, y, f"Capacity Utilization: {utilization:.1f} %")
     y -= 0.5 * cm
-    c.drawString(2 * cm, y, f"Total demand: {total_demand}")
-    c.drawString(width/2 + 0.5 * cm, y, f"Number of vehicles: {num_vehicles}")
+    c.drawString(2 * cm, y, f"Total Demand: {total_demand}")
+    c.drawString(10 * cm, y, f"Active Vehicles: {num_vehicles}")
     
+    # --- Detailed Routes Table (Restored) ---
+    y -= 1.5 * cm
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(2 * cm, y, "Detailed Vehicle Itineraries")
+    y -= 0.8 * cm
+    
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(2*cm, y, "Vehicle")
+    c.drawString(4*cm, y, "Stop #")
+    c.drawString(6*cm, y, "Location Name")
+    c.drawString(12*cm, y, "Demand")
+    c.line(2*cm, y-0.2*cm, 19*cm, y-0.2*cm)
+    y -= 0.6 * cm
+
+    c.setFont("Helvetica", 9)
+    for index, row in solution_df.iterrows():
+        # Check if we need a new page
+        if y < 3 * cm:
+            c.showPage()
+            y = height - 3 * cm
+            c.setFont("Helvetica", 9)
+
+        c.drawString(2*cm, y, str(row['vehicle']))
+        c.drawString(4*cm, y, str(row['stop_order']))
+        # Truncate long names to fit
+        name = row['name'][:30] + '..' if len(row['name']) > 30 else row['name']
+        c.drawString(6*cm, y, name)
+        c.drawString(12*cm, y, str(row['demand']))
+        y -= 0.5 * cm
+
     c.showPage()
     c.save()
     buffer.seek(0)
