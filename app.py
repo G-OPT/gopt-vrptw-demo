@@ -17,73 +17,87 @@ from google_routes import get_route_polyline  # real road paths (polyline)
 # PDF REPORT GENERATION
 # ======================================================
 
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
 def create_pdf_report(total_km, total_demand, total_capacity, num_vehicles, solution_df, logo_path: Path | None = None) -> bytes:
     buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
-    
-    # --- Header & Logo ---
-    header_logo_w, header_logo_h = 3.5 * cm, 3.5 * cm
-    padding_top = height - 2.0 * cm
-    if logo_path and logo_path.exists():
-        c.drawImage(str(logo_path), 2*cm, padding_top - header_logo_h, width=header_logo_w, height=header_logo_h, preserveAspectRatio=True, mask='auto')
+    # Using SimpleDocTemplate makes multi-page handling automatic
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+    styles = getSampleStyleSheet()
+    story = []
 
-    title_x = 2 * cm + header_logo_w + 1 * cm
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(title_x, padding_top - 0.5 * cm, "G-OPT Route Optimization Report")
-    c.setFont("Helvetica", 11)
-    c.drawString(title_x, padding_top - 1.3 * cm, "Professional VRPTW Summary & Detailed Itinerary")
+    # 1. Custom Styles
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=18, spaceAfter=20, textColor=colors.HexColor("#1E3A8A"))
+    metric_label = ParagraphStyle('MetricLabel', parent=styles['Normal'], fontSize=9, textColor=colors.grey)
+    metric_value = ParagraphStyle('MetricValue', parent=styles['Normal'], fontSize=12, fontName='Helvetica-Bold')
 
-    # --- Summary Metrics ---
-    y = padding_top - header_logo_h - 1.5 * cm
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(2 * cm, y, "Summary Metrics")
-    y -= 0.8 * cm
-    c.setFont("Helvetica", 10)
+    # 2. Add Title
+    story.append(Paragraph("G-OPT Route Optimization Report", title_style))
+    story.append(Spacer(1, 12))
+
+    # 3. KPI Dashboard (Summary Table)
     utilization = (total_demand / total_capacity * 100) if total_capacity > 0 else 0
-    
-    c.drawString(2 * cm, y, f"Total Distance: {total_km:.2f} km")
-    c.drawString(10 * cm, y, f"Capacity Utilization: {utilization:.1f} %")
-    y -= 0.5 * cm
-    c.drawString(2 * cm, y, f"Total Demand: {total_demand}")
-    c.drawString(10 * cm, y, f"Active Vehicles: {num_vehicles}")
-    
-    # --- Detailed Routes Table (Restored) ---
-    y -= 1.5 * cm
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(2 * cm, y, "Detailed Vehicle Itineraries")
-    y -= 0.8 * cm
-    
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(2*cm, y, "Vehicle")
-    c.drawString(4*cm, y, "Stop #")
-    c.drawString(6*cm, y, "Location Name")
-    c.drawString(12*cm, y, "Demand")
-    c.line(2*cm, y-0.2*cm, 19*cm, y-0.2*cm)
-    y -= 0.6 * cm
+    summary_data = [
+        [Paragraph("Total Distance", metric_label), Paragraph("Capacity Utilization", metric_label)],
+        [Paragraph(f"{total_km:.2f} km", metric_value), Paragraph(f"{utilization:.1f} %", metric_value)],
+        [Paragraph("Total Demand", metric_label), Paragraph("Active Vehicles", metric_label)],
+        [Paragraph(f"{total_demand} units", metric_value), Paragraph(f"{num_vehicles}", metric_value)]
+    ]
+    summary_table = Table(summary_data, colWidths=[250, 250])
+    summary_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+    ]))
+    story.append(summary_table)
+    story.append(Spacer(1, 20))
 
-    c.setFont("Helvetica", 9)
-    for index, row in solution_df.iterrows():
-        # Check if we need a new page
-        if y < 3 * cm:
-            c.showPage()
-            y = height - 3 * cm
-            c.setFont("Helvetica", 9)
+    # 4. Detailed Route Table (The "Efficient" Part)
+    story.append(Paragraph("Detailed Vehicle Manifest", styles['Heading2']))
+    
+    # Prepare Table Data
+    data = [["Vehicle", "Stop #", "Location Name", "Demand", "Ready Time"]] # Header
+    
+    # Sort for cleaner report
+    sorted_df = solution_df.sort_values(['vehicle', 'stop_order'])
+    
+    for _, row in sorted_df.iterrows():
+        data.append([
+            f"Veh {row['vehicle']}", 
+            str(row['stop_order']), 
+            row['name'][:40], 
+            str(row['demand']),
+            str(row['ready_time'])
+        ])
 
-        c.drawString(2*cm, y, str(row['vehicle']))
-        c.drawString(4*cm, y, str(row['stop_order']))
-        # Truncate long names to fit
-        name = row['name'][:30] + '..' if len(row['name']) > 30 else row['name']
-        c.drawString(6*cm, y, name)
-        c.drawString(12*cm, y, str(row['demand']))
-        y -= 0.5 * cm
+    # 5. Professional Table Styling
+    main_table = Table(data, repeatRows=1, colWidths=[60, 50, 250, 60, 80])
+    main_table.setStyle(TableStyle([
+        # Header Styling
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        
+        # Grid and Body Styling
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ('ALIGN', (0, 1), (1, -1), 'CENTER'), # Center vehicle and stop #
+        ('ALIGN', (3, 1), (-1, -1), 'CENTER'),
+        
+        # Zebra Striping (Alternating rows)
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    
+    story.append(main_table)
 
-    c.showPage()
-    c.save()
+    # Build PDF
+    doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
-
-
 # ======================================================
 # STREAMLIT APP
 # ======================================================
