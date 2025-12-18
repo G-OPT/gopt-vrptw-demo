@@ -128,10 +128,10 @@ with header_right:
         """,
         unsafe_allow_html=True,
     )
-st.divider() # Adds a clean horizontal line and some padding
+st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
+#st.divider() # Adds a clean horizontal line and some padding
 st.write(
     "Upload a CSV of your locations and constraints, choose your fleet settings, and G-OPT will compute optimized routes with time windows and capacity constraints."
-    
 )
 
 # ======================================================
@@ -189,7 +189,12 @@ df = pd.read_csv(uploaded_file if uploaded_file else "sample_locations.csv")
 
 # RESTORED: Input Locations Table
 st.subheader("📍 Input Locations")
-st.info("💡 **Note:** The data below is a sample dataset. You can upload your own via the sidebar.")
+st.info("""
+    💡 **Note:** The data below is a sample dataset. 
+    You can upload your own via the sidebar. 
+    
+    **Important:** If uploading your own CSV file, please ensure it **respects the exact data format and column headers** shown in this example to ensure the solver works correctly.
+""")
 
 st.dataframe(df, use_container_width=True)
 
