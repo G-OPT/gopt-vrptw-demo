@@ -189,6 +189,8 @@ df = pd.read_csv(uploaded_file if uploaded_file else "sample_locations.csv")
 
 # RESTORED: Input Locations Table
 st.subheader("📍 Input Locations")
+st.info("💡 **Note:** The data below is a sample dataset. You can upload your own via the sidebar.")
+
 st.dataframe(df, use_container_width=True)
 
 coords = list(zip(df["latitude"], df["longitude"]))
