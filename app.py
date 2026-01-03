@@ -189,7 +189,8 @@ if total_demand > total_capacity:
 
 if st.button("🚀 Optimize Routes"):
     with st.spinner("Running VRPTW solver (Calculating real road paths)..."):
-        routes, total_km = solve_vrp(
+        # MODIFIED: Now unpacks 3 variables
+        routes, total_km, unreachable_idx = solve_vrp(
             coords=coords, demands=demands, vehicle_capacity=vehicle_capacity,
             ready_times=ready_times, due_times=due_times, service_times=service_times,
             num_vehicles=num_vehicles, use_google=use_google, api_key=api_key
@@ -198,23 +199,22 @@ if st.button("🚀 Optimize Routes"):
     if routes is None:
         st.error("❌ No feasible solution found. Try more vehicles, more capacity, or wider time windows.")
     else:
-        # Check for unreachable locations (Penalty detection)
-        if total_km > 9000:
-            st.error("🚨 **Routing Warning:** One or more locations appear to be unreachable by road (e.g., an island). Distance results will include a massive penalty.")
-            st.info("Check 'Suomenlinna' or similar points in your dataset.")
+        # NEW: Professional Connectivity Alert
+        if unreachable_idx:
+            bad_names = df.iloc[unreachable_idx]["name"].tolist()
+            st.error(f"🚨 **Connectivity Alert:** The following locations are unreachable by road: **{', '.join(bad_names)}**")
+            st.warning("Google Maps could not find a driving path to these points (they may be on islands or in restricted zones). A distance penalty has been applied to include them.")
 
         st.success(f"Optimization complete! Total distance = **{total_km:.2f} km**")
 
         solution_df = routes_to_dataframe(df, routes)
         
-        # Vehicle Route Expanders (Filtered for active vehicles only)
         st.subheader("🧭 Vehicle Routes")
         active_vehicles = 0
         for vid in sorted(solution_df["vehicle"].unique().tolist()):
             vdf = solution_df[solution_df["vehicle"] == vid].sort_values("stop_order")
             load = int(vdf["demand"].sum())
             
-            # IMPROVEMENT: Only show vehicles that actually moved (more than just the depot)
             if len(vdf) > 1 and load > 0:
                 active_vehicles += 1
                 with st.expander(f"Vehicle {vid} (load {load}/{vehicle_capacity})"):
@@ -249,7 +249,7 @@ if st.button("🚀 Optimize Routes"):
         if not depot_only:
             for vid in sol_sorted["vehicle"].unique():
                 vdf = sol_sorted[sol_sorted["vehicle"] == vid]
-                if len(vdf) <= 1: continue # Skip vehicles staying at depot
+                if len(vdf) <= 1: continue 
                 
                 color = route_colors[int(vid) % len(route_colors)]
                 ordered_nodes = vdf[["latitude", "longitude"]].values.tolist()
