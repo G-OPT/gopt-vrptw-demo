@@ -8,14 +8,14 @@ import streamlit as st
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 from vrp_solver import solve_vrp, routes_to_dataframe
 from google_routes import get_route_polyline
 
 # ======================================================
-# PDF REPORT GENERATION
+# PDF REPORT GENERATION (RESTORED STYLE + KPI)
 # ======================================================
 
 def create_pdf_report(summary, solution_df, logo_path: Path | None = None) -> bytes:
@@ -24,7 +24,8 @@ def create_pdf_report(summary, solution_df, logo_path: Path | None = None) -> by
     styles = getSampleStyleSheet()
     story = []
 
-    title_text = "<b>G-OPT Route Optimization Report</b><br/><font size=10>Professional VRPTW Summary</font>"
+    # 1. Header
+    title_text = "<b>G-OPT Route Optimization Report</b><br/><font size=10>Professional VRPTW Financial Summary</font>"
     header_data = []
     if logo_path and logo_path.exists():
         img = Image(str(logo_path), width=2.5*cm, height=2.5*cm, kind='proportional')
@@ -37,40 +38,59 @@ def create_pdf_report(summary, solution_df, logo_path: Path | None = None) -> by
     story.append(header_table)
     story.append(Spacer(1, 20))
 
-    story.append(Paragraph("Executive Summary", styles['Heading2']))
+    # 2. Executive Dashboard (KPIs)
+    metric_label = ParagraphStyle('MetricLabel', parent=styles['Normal'], fontSize=8, textColor=colors.grey)
+    metric_value = ParagraphStyle('MetricValue', parent=styles['Normal'], fontSize=11, fontName='Helvetica-Bold')
+
+    # Financial Efficiency Calculations
+    cost_per_km = summary['total_cost'] / summary['total_km'] if summary['total_km'] > 0 else 0
+    cost_per_unit = summary['total_cost'] / summary['total_demand'] if summary['total_demand'] > 0 else 0
+
     summary_data = [
-        ["TOTAL ESTIMATED COST", f"€{summary['total_cost']:.2f}", "TOTAL DISTANCE", f"{summary['total_km']:.2f} km"],
-        ["FUEL EXPENSE", f"€{summary['fuel_cost']:.2f}", "DRIVER WAGES", f"€{summary['wage_cost']:.2f}"],
-        ["UTILIZATION", f"{summary['utilization']:.1f}%", "ACTIVE VEHICLES", f"{summary['active_vehicles']}"],
-        ["TOTAL HOURS", f"{summary['total_hrs']:.1f} hrs", "FIXED FEES", f"€{summary['toll_cost']:.2f}"]
+        [Paragraph("TOTAL ESTIMATED COST", metric_label), Paragraph("COST PER UNIT (EFFICIENCY)", metric_label)],
+        [Paragraph(f"€{summary['total_cost']:.2f}", metric_value), Paragraph(f"€{cost_per_unit:.2f} / unit", metric_value)],
+        [Paragraph("TOTAL DISTANCE", metric_label), Paragraph("COST PER KM", metric_label)],
+        [Paragraph(f"{summary['total_km']:.2f} km", metric_value), Paragraph(f"€{cost_per_km:.2f} / km", metric_value)],
+        [Paragraph("CAPACITY UTILIZATION", metric_label), Paragraph("ACTIVE VEHICLES", metric_label)],
+        [Paragraph(f"{summary['utilization']:.1f} %", metric_value), Paragraph(f"{summary['active_vehicles']} Units", metric_value)]
     ]
-    summary_table = Table(summary_data, colWidths=[4*cm, 4*cm, 4*cm, 4*cm])
+    
+    summary_table = Table(summary_data, colWidths=[250, 250])
     summary_table.setStyle(TableStyle([
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('BACKGROUND', (0,0), (-1,-1), colors.whitesmoke),
+        ('BOX', (0,0), (-1,-1), 1, colors.lightgrey),
     ]))
     story.append(summary_table)
     story.append(Spacer(1, 25))
 
-    story.append(Paragraph("Route Manifests", styles['Heading2']))
-    for vid in sorted(solution_df["vehicle"].unique()):
-        vdf = solution_df[solution_df["vehicle"] == vid].sort_values("stop_order")
-        if len(vdf) <= 1: continue
-        story.append(Spacer(1, 10))
-        story.append(Paragraph(f"<b>Vehicle V-{vid}</b>", styles['Heading3']))
-        card_data = [["Stop", "Location", "Load", "Time Window", "Service"]]
-        for _, row in vdf.iterrows():
-            card_data.append([str(row['stop_order']), row['name'][:30], str(row['demand']), f"{row['ready_time']}-{row['due_time']}", f"{row['service_time']}m"])
-        ct = Table(card_data, colWidths=[1.5*cm, 7.5*cm, 2*cm, 3.5*cm, 2.5*cm])
-        ct.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ]))
-        story.append(ct)
-        story.append(PageBreak())
+    # 3. Detailed Manifest (Restored Zebra Stripes & Compact View)
+    story.append(Paragraph("Detailed Route Manifest", styles['Heading2']))
+    
+    data = [["Vehicle", "Stop #", "Location Name", "Demand", "Ready Time"]]
+    sorted_df = solution_df.sort_values(['vehicle', 'stop_order'])
+    
+    for _, row in sorted_df.iterrows():
+        data.append([
+            f"V-{row['vehicle']}", 
+            str(row['stop_order']), 
+            row['name'][:35], 
+            str(row['demand']),
+            str(row['ready_time'])
+        ])
+
+    main_table = Table(data, repeatRows=1, colWidths=[60, 50, 240, 60, 80])
+    main_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1E3A8A")), # Logistics Blue
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.whitesmoke]), # Zebra stripes restored
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+    ]))
+    
+    story.append(main_table)
 
     doc.build(story)
     buffer.seek(0)
@@ -123,20 +143,17 @@ with header_right:
         """, unsafe_allow_html=True)
 
 st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
-st.write("Upload a CSV of your locations and constraints, choose your fleet settings, and G-OPT will compute optimized routes with time windows and capacity constraints.")
+st.write("Upload a CSV of your locations and constraints, choose your fleet settings, and G-OPT will compute optimized routes.")
 
 # Divider
 st.markdown("""<div style="display: flex; align-items: center; text-align: center; color: #1E3A8A;"><hr style="flex-grow: 1; border: none; border-top: 1px solid #1E3A8A;"><span style="padding: 0 10px;">🚚</span><hr style="flex-grow: 1; border: none; border-top: 1px solid #1E3A8A;"></div>""", unsafe_allow_html=True)
 
 df = pd.read_csv(uploaded_file if uploaded_file else "sample_locations.csv")
 st.subheader("📍 Input Locations")
-
-# RESTORED MESSAGE
 st.info("""
     💡 **Note:** The data below is a sample dataset. You can upload your own via the sidebar. 
     **Important:** If uploading your own CSV file, please ensure it **respects the exact data format and column headers** shown in this example to ensure the solver works correctly.
 """)
-
 st.dataframe(df, use_container_width=True)
 
 # Original Capacity Check Logic
@@ -170,9 +187,9 @@ if st.button("🚀 Optimize Routes"):
         )
 
     if routes is None:
-        st.error("❌ No feasible solution found. Try more vehicles, more capacity, or wider time windows.")
+        st.error("❌ No feasible solution found.")
     else:
-        # Cost Logic
+        # Financial Logic
         fuel_cost = (total_km * (consumption / 100)) * fuel_price
         total_hrs = total_min / 60
         wage_cost = total_hrs * driver_wage
@@ -181,12 +198,10 @@ if st.button("🚀 Optimize Routes"):
 
         if unreachable_idx:
             bad_names = df.iloc[unreachable_idx]["name"].tolist()
-            st.error(f"🚨 **Connectivity Alert:** The following locations are unreachable by road: **{', '.join(bad_names)}**")
-            st.warning("Google Maps could not find a driving path to these points. A distance penalty has been applied.")
+            st.error(f"🚨 **Connectivity Alert:** Unreachable: **{', '.join(bad_names)}**")
 
         st.success(f"Optimization complete! Total distance = **{total_km:.2f} km**")
 
-        # Display Metrics
         m_cols = st.columns(4)
         m_cols[0].metric("Op. Cost", f"€{total_op_cost:.2f}")
         m_cols[1].metric("Fuel", f"€{fuel_cost:.2f}")
@@ -211,11 +226,10 @@ if st.button("🚀 Optimize Routes"):
         summary_stats = {
             'total_cost': total_op_cost, 'total_km': total_km, 'fuel_cost': fuel_cost,
             'wage_cost': wage_cost, 'toll_cost': toll_cost, 'total_hrs': total_hrs,
-            'utilization': util, 'active_vehicles': active_v
+            'utilization': util, 'active_vehicles': active_v, 'total_demand': total_demand
         }
         dl_cols = st.columns(2)
-        with dl_cols[0]: 
-            st.download_button("⬇ Download results as CSV", solution_df.to_csv(index=False).encode("utf-8"), "vrptw_solution.csv", "text/csv")
+        with dl_cols[0]: st.download_button("⬇ Download results as CSV", solution_df.to_csv(index=False).encode("utf-8"), "vrptw_solution.csv", "text/csv")
         with dl_cols[1]:
             pdf_bytes = create_pdf_report(summary_stats, solution_df, logo_path)
             st.download_button("⬇ Download PDF report", pdf_bytes, "gopt_report.pdf", "application/pdf")
@@ -223,9 +237,6 @@ if st.button("🚀 Optimize Routes"):
         # Map Visualization (Original Full Logic)
         st.subheader("🗺 Route Map (Google Roads)")
         is_large = len(df) > 25
-        if is_large:
-            st.info("ℹ️ Large dataset detected: Drawing geometric paths for performance.")
-
         sol_sorted = solution_df.sort_values(["vehicle", "stop_order"]).reset_index(drop=True)
         route_colors = [[255, 99, 71], [30, 144, 255], [34, 139, 34], [238, 130, 238], [255, 165, 0], [0, 206, 209]]
         layers = [pdk.Layer("ScatterplotLayer", data=df.iloc[0:1], get_position="[longitude, latitude]", get_radius=120, get_fill_color=[255, 230, 0], pickable=True)]
