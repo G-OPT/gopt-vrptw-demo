@@ -34,7 +34,6 @@ def solve_vrp(
     num_vehicles,
     use_google=False,
     api_key=None,
-    departure_time=None, # ADDED: For Traffic-Aware Routing
 ):
 
     n = len(coords)
@@ -45,9 +44,9 @@ def solve_vrp(
     # --------------------------------------------------------
     if use_google and api_key:
         print("Using Google Distance Matrix API...")
-        # MODIFIED: Passing departure_time to the matrix builder
+        # Restored to your original call to avoid the TypeError
         distance_matrix_km, time_matrix_min = get_google_distance_matrices(
-            coords, api_key, departure_time=departure_time
+            coords, api_key
         )
         
         # SMART DETECTION: Identify indices that have the 9999 penalty
@@ -90,7 +89,6 @@ def solve_vrp(
     def time_cb(from_index, to_index):
         f = manager.IndexToNode(from_index)
         t = manager.IndexToNode(to_index)
-        # Includes travel time + service time at the originating stop
         return time_matrix_min[f][t] + service_times[f]
 
     time_cb_idx = routing.RegisterTransitCallback(time_cb)
@@ -126,7 +124,7 @@ def solve_vrp(
     # --------------------------------------------------------
     routes = []
     total_km = 0.0
-    total_min = 0 # ADDED: To track financial wage hours
+    total_min = 0 # Added to track hours for wages
 
     for v in range(num_vehicles):
         idx = routing.Start(v)
@@ -137,17 +135,11 @@ def solve_vrp(
             prev_idx = idx
             idx = solution.Value(routing.NextVar(idx))
             next_node = manager.IndexToNode(idx)
-            
-            # Distance update
             total_km += distance_matrix_km[node][next_node]
-            
-            # Time update (Drive time + Service time at current stop)
             total_min += time_matrix_min[node][next_node] + service_times[node]
-            
         route.append(0)
         routes.append(route)
 
-    # Return the FOUR required values for app.py
     return routes, total_km, list(set(unreachable_indices)), total_min
 
 
