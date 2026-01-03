@@ -34,6 +34,7 @@ def solve_vrp(
     num_vehicles,
     use_google=False,
     api_key=None,
+    departure_time=None, # ADDED: For Traffic-Aware Routing
 ):
 
     n = len(coords)
@@ -44,14 +45,13 @@ def solve_vrp(
     # --------------------------------------------------------
     if use_google and api_key:
         print("Using Google Distance Matrix API...")
+        # MODIFIED: Passing departure_time to the matrix builder
         distance_matrix_km, time_matrix_min = get_google_distance_matrices(
-            coords, api_key
+            coords, api_key, departure_time=departure_time
         )
         
         # SMART DETECTION: Identify indices that have the 9999 penalty
         for i in range(n):
-            # If a location cannot reach the depot or be reached by the depot
-            # we flag it as unreachable.
             if distance_matrix_km[0][i] >= 9000 or distance_matrix_km[i][0] >= 9000:
                 unreachable_indices.append(i)
     else:
@@ -90,6 +90,7 @@ def solve_vrp(
     def time_cb(from_index, to_index):
         f = manager.IndexToNode(from_index)
         t = manager.IndexToNode(to_index)
+        # Includes travel time + service time at the originating stop
         return time_matrix_min[f][t] + service_times[f]
 
     time_cb_idx = routing.RegisterTransitCallback(time_cb)
@@ -101,8 +102,6 @@ def solve_vrp(
         time_dim.CumulVar(idx).SetRange(ready_times[node], due_times[node])
 
     for v in range(num_vehicles):
-        routing.Start(v)
-        routing.End(v)
         time_dim.CumulVar(routing.Start(v)).SetRange(ready_times[0], due_times[0])
         time_dim.CumulVar(routing.End(v)).SetRange(ready_times[0], due_times[0])
 
@@ -117,16 +116,17 @@ def solve_vrp(
     try:
         solution = routing.SolveWithParameters(search_params)
     except Exception as e:
-        return None, None, []
+        return None, None, [], 0
 
     if solution is None:
-        return None, None, []
+        return None, None, [], 0
 
     # --------------------------------------------------------
     # Extract Routes
     # --------------------------------------------------------
     routes = []
     total_km = 0.0
+    total_min = 0 # ADDED: To track financial wage hours
 
     for v in range(num_vehicles):
         idx = routing.Start(v)
@@ -137,12 +137,18 @@ def solve_vrp(
             prev_idx = idx
             idx = solution.Value(routing.NextVar(idx))
             next_node = manager.IndexToNode(idx)
+            
+            # Distance update
             total_km += distance_matrix_km[node][next_node]
+            
+            # Time update (Drive time + Service time at current stop)
+            total_min += time_matrix_min[node][next_node] + service_times[node]
+            
         route.append(0)
         routes.append(route)
 
-    # Return the three required values
-    return routes, total_km, list(set(unreachable_indices))
+    # Return the FOUR required values for app.py
+    return routes, total_km, list(set(unreachable_indices)), total_min
 
 
 # --------------------------------------------------------
