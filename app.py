@@ -56,7 +56,7 @@ def create_pdf_report(summary, solution_df, logo_path: Path | None = None) -> by
     story.append(Paragraph("Route Manifests", styles['Heading2']))
     for vid in sorted(solution_df["vehicle"].unique()):
         vdf = solution_df[solution_df["vehicle"] == vid].sort_values("stop_order")
-        if len(vdf) <= 2: continue
+        if len(vdf) <= 1: continue
         story.append(Spacer(1, 10))
         story.append(Paragraph(f"<b>Vehicle V-{vid}</b>", styles['Heading3']))
         card_data = [["Stop", "Location", "Load", "Time Window", "Service"]]
@@ -92,39 +92,51 @@ toll_rate = st.sidebar.number_input("Avg. Toll (€/km)", 0.0, 1.0, 0.12)
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Solver Settings")
-uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
+uploaded_file = st.sidebar.file_uploader("Upload CSV file (or use sample_locations.csv)", type=["csv"])
 num_vehicles = st.sidebar.number_input("Number of vehicles", 1, 100, 3)
-vehicle_capacity = st.sidebar.number_input("Vehicle capacity", 1, 1000, 7)
-use_google = st.sidebar.checkbox("Use Google Maps", value=True)
+vehicle_capacity = st.sidebar.number_input("Vehicle capacity (per vehicle)", 1, 1000, 7)
+use_google = st.sidebar.checkbox("Use Google Maps (real road distances + paths)", value=True)
 
 api_key = None
 if use_google:
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
     else:
-        api_key = st.sidebar.text_input("Google API key", type="password")
+        api_key = st.sidebar.text_input("Google API key (local use only)", type="password", placeholder="AIza...")
 
 st.sidebar.markdown("---")
 st.sidebar.header("🗺 Map Options")
 show_labels = st.sidebar.checkbox("Show customer labels", value=True)
-depot_only = st.sidebar.checkbox("Show only depot", value=False)
+depot_only = st.sidebar.checkbox("Show only depot (hide routes)", value=False)
 
 # Header Logic
 header_left, header_right = st.columns([1.2, 4])
 with header_left:
     if logo_path.exists(): st.image(str(logo_path), width=110)
 with header_right:
-    st.markdown("## 🚚 G-OPT Route Optimization (VRPTW + Google Roads)")
+    st.markdown("""
+        ## 🚚 G-OPT Route Optimization (VRPTW + Google Roads)
+        <span style='font-size:16px;'>
+        Solve complex <b>Vehicle Routing Problems with Time Windows</b><br>
+        using real Google Maps distances & realistic road paths.
+        </span>
+        """, unsafe_allow_html=True)
 
 st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
-st.write("Upload a CSV of your locations and constraints, choose your fleet settings, and G-OPT will compute optimized routes.")
+st.write("Upload a CSV of your locations and constraints, choose your fleet settings, and G-OPT will compute optimized routes with time windows and capacity constraints.")
 
 # Divider
 st.markdown("""<div style="display: flex; align-items: center; text-align: center; color: #1E3A8A;"><hr style="flex-grow: 1; border: none; border-top: 1px solid #1E3A8A;"><span style="padding: 0 10px;">🚚</span><hr style="flex-grow: 1; border: none; border-top: 1px solid #1E3A8A;"></div>""", unsafe_allow_html=True)
 
 df = pd.read_csv(uploaded_file if uploaded_file else "sample_locations.csv")
 st.subheader("📍 Input Locations")
-st.info("💡 **Note:** Ensure your CSV respects the exact data format shown below.")
+
+# RESTORED MESSAGE
+st.info("""
+    💡 **Note:** The data below is a sample dataset. You can upload your own via the sidebar. 
+    **Important:** If uploading your own CSV file, please ensure it **respects the exact data format and column headers** shown in this example to ensure the solver works correctly.
+""")
+
 st.dataframe(df, use_container_width=True)
 
 # Original Capacity Check Logic
@@ -144,8 +156,7 @@ if total_demand > total_capacity:
 
 # Optimization
 if st.button("🚀 Optimize Routes"):
-    with st.spinner("Running VRPTW solver..."):
-        # Calling solver without departure_time to avoid TypeError
+    with st.spinner("Running VRPTW solver (Calculating real road paths)..."):
         routes, total_km, unreachable_idx, total_min = solve_vrp(
             coords=list(zip(df["latitude"], df["longitude"])),
             demands=df["demand"].tolist(),
@@ -159,7 +170,7 @@ if st.button("🚀 Optimize Routes"):
         )
 
     if routes is None:
-        st.error("❌ No feasible solution found.")
+        st.error("❌ No feasible solution found. Try more vehicles, more capacity, or wider time windows.")
     else:
         # Cost Logic
         fuel_cost = (total_km * (consumption / 100)) * fuel_price
@@ -170,7 +181,8 @@ if st.button("🚀 Optimize Routes"):
 
         if unreachable_idx:
             bad_names = df.iloc[unreachable_idx]["name"].tolist()
-            st.error(f"🚨 **Connectivity Alert:** Unreachable: **{', '.join(bad_names)}**")
+            st.error(f"🚨 **Connectivity Alert:** The following locations are unreachable by road: **{', '.join(bad_names)}**")
+            st.warning("Google Maps could not find a driving path to these points. A distance penalty has been applied.")
 
         st.success(f"Optimization complete! Total distance = **{total_km:.2f} km**")
 
@@ -179,7 +191,7 @@ if st.button("🚀 Optimize Routes"):
         m_cols[0].metric("Op. Cost", f"€{total_op_cost:.2f}")
         m_cols[1].metric("Fuel", f"€{fuel_cost:.2f}")
         m_cols[2].metric("Wages", f"€{wage_cost:.2f}")
-        m_cols[3].metric("Time", f"{total_hrs:.1f} hrs")
+        m_cols[3].metric("Work Time", f"{total_hrs:.1f} hrs")
 
         solution_df = routes_to_dataframe(df, routes)
         st.subheader("🧭 Vehicle Routes")
@@ -192,6 +204,9 @@ if st.button("🚀 Optimize Routes"):
                 with st.expander(f"Vehicle {vid} (load {load}/{vehicle_capacity})"):
                     st.write(" → ".join(vdf["name"].tolist()))
 
+        st.subheader("📘 Detailed Route Table")
+        st.dataframe(solution_df, use_container_width=True)
+
         # Downloads
         summary_stats = {
             'total_cost': total_op_cost, 'total_km': total_km, 'fuel_cost': fuel_cost,
@@ -199,17 +214,21 @@ if st.button("🚀 Optimize Routes"):
             'utilization': util, 'active_vehicles': active_v
         }
         dl_cols = st.columns(2)
-        with dl_cols[0]: st.download_button("⬇ CSV", solution_df.to_csv(index=False).encode("utf-8"), "results.csv")
+        with dl_cols[0]: 
+            st.download_button("⬇ Download results as CSV", solution_df.to_csv(index=False).encode("utf-8"), "vrptw_solution.csv", "text/csv")
         with dl_cols[1]:
             pdf_bytes = create_pdf_report(summary_stats, solution_df, logo_path)
-            st.download_button("⬇ PDF Report", pdf_bytes, "report.pdf")
+            st.download_button("⬇ Download PDF report", pdf_bytes, "gopt_report.pdf", "application/pdf")
 
         # Map Visualization (Original Full Logic)
-        st.subheader("🗺 Route Map")
+        st.subheader("🗺 Route Map (Google Roads)")
         is_large = len(df) > 25
+        if is_large:
+            st.info("ℹ️ Large dataset detected: Drawing geometric paths for performance.")
+
         sol_sorted = solution_df.sort_values(["vehicle", "stop_order"]).reset_index(drop=True)
-        route_colors = [[255, 99, 71], [30, 144, 255], [34, 139, 34], [255, 165, 0]]
-        layers = [pdk.Layer("ScatterplotLayer", data=df.iloc[0:1], get_position="[longitude, latitude]", get_radius=120, get_fill_color=[255, 230, 0])]
+        route_colors = [[255, 99, 71], [30, 144, 255], [34, 139, 34], [238, 130, 238], [255, 165, 0], [0, 206, 209]]
+        layers = [pdk.Layer("ScatterplotLayer", data=df.iloc[0:1], get_position="[longitude, latitude]", get_radius=120, get_fill_color=[255, 230, 0], pickable=True)]
 
         if not depot_only:
             for vid in sol_sorted["vehicle"].unique():
@@ -228,7 +247,9 @@ if st.button("🚀 Optimize Routes"):
                         for lat, lon in road_coords: full_path.append([lon, lat])
                     else:
                         full_path.extend([[origin[1], origin[0]], [dest[1], dest[0]]])
-                layers.append(pdk.Layer("PathLayer", data=[{"path": full_path}], get_path="path", get_color=color, width_scale=8))
-                layers.append(pdk.Layer("ScatterplotLayer", data=vdf, get_position="[longitude, latitude]", get_radius=60, get_fill_color=color))
+                layers.append(pdk.Layer("PathLayer", data=[{"path": full_path}], get_path="path", get_color=color, width_scale=8, width_min_pixels=3))
+                layers.append(pdk.Layer("ScatterplotLayer", data=vdf, get_position="[longitude, latitude]", get_radius=60, get_fill_color=color, pickable=True))
+                if show_labels:
+                    layers.append(pdk.Layer("TextLayer", data=vdf, get_position="[longitude, latitude]", get_text="name", get_size=15, get_color=[0, 0, 0], get_background=True))
 
-        st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=pdk.ViewState(latitude=df["latitude"].mean(), longitude=df["longitude"].mean(), zoom=10)))
+        st.pydeck_chart(pdk.Deck(layers=layers, initial_view_state=pdk.ViewState(latitude=df["latitude"].mean(), longitude=df["longitude"].mean(), zoom=10 if not is_large else 6), map_style=pdk.map_styles.LIGHT, tooltip={"text": "{name}"}))
